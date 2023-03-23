@@ -34,14 +34,14 @@ contract Top50Tokens {
         topTokens = new TokenData[](50);
     }
 
-    function addTokenToCheck(address token) external {
-        require(msg.sender == owner, "Only owner can add tokens");
-        require(token != address(0), "Invalid token address");
-        require(!isTokenInTop50[token], "Token already in top 50");
-        isTokenInTop50[token] = true;
-    }
+function addTokenToCheck(address token) external {
+    require(token != address(0), "Invalid token address");
+    require(!isTokenInTop50[token], "Token already in top 50");
+    require(msg.sender == owner || managers[msg.sender], "Only owner or managers can add tokens");
+    isTokenInTop50[token] = true;
+}
 
-    function getTop50PoolsByUsdcAmount(uint256 currentUSDC, address[] calldata tokensToAdd) external view returns (TokenData[] memory) {
+   function getTop50PoolsByUsdcAmount(uint256 currentUSDC, address[] calldata tokensToAdd) external view returns (TokenData[] memory) {
     INonfungiblePositionManager positionManager = INonfungiblePositionManager(nonfungiblePositionManagerAddress);
     uint256 totalPositions = positionManager.totalSupply();
 
@@ -59,16 +59,13 @@ contract Top50Tokens {
 
             address nonUsdcToken = (token0 == usdcTokenAddress) ? token1 : token0;
 
-            if (!isTokenInTop50[nonUsdcToken]) {
-                for (uint256 j = 0; j < 50; j++) {
-                    if (adjustedUsdcAmount > topTokens[j].usdValue) {
-                        for (uint256 k = 49; k > j; k--) {
-                            topTokens[k] = topTokens[k - 1];
-                        }
-                        topTokens[j] = TokenData({token: nonUsdcToken, usdValue: adjustedUsdcAmount});
-                        isTokenInTop50[nonUsdcToken] = true;
-                        break;
+            for (uint256 j = 0; j < 50; j++) {
+                if (adjustedUsdcAmount > topTokens[j].usdValue) {
+                    for (uint256 k = 49; k > j; k--) {
+                        topTokens[k] = topTokens[k - 1];
                     }
+                    topTokens[j] = TokenData({token: nonUsdcToken, usdValue: adjustedUsdcAmount});
+                    break;
                 }
             }
         }
@@ -78,6 +75,26 @@ contract Top50Tokens {
     for (uint256 i = 0; i < 50; i++) {
         result[i] = topTokens[i];
     }
+
+    // check value of all tokens, including those that are not in the top 50
+    for (uint256 i = 0; i < tokensToAdd.length; i++) {
+        address token = tokensToAdd[i];
+        uint256 usdValue = getUsdValue(token, currentUSDC);
+        if (usdValue > 0) {
+            if (!isTokenInTop50[token]) {
+                for (uint256 j = 0; j < result.length; j++) {
+                    if (usdValue > result[j].usdValue) {
+                        for (uint256 k = result.length - 1; k > j; k--) {
+                            result[k] = result[k - 1];
+                        }
+                        result[j] = TokenData({token: token, usdValue: usdValue});
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
 
     // check value of added tokens and add them to result if they are in the top 50
     for (uint256 i = 0; i < tokensToAdd.length; i++) {
